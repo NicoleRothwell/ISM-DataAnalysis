@@ -1,0 +1,681 @@
+---
+title: 'Assignment 2: Data Collection and Text Mining'
+author: "Kevin Frew (20742541) & Nicole Rothwell (21970548)"
+date: "02/07/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+##Set up of the general environment:
+```{r}
+#pacman installs a package before loading it if it is not already installed
+if (!require("pacman")) install.packages("pacman"); 
+library(pacman)
+pacman::p_load(tidyverse, dplyr, rtweet, lubridate, tidytext, Unicode, rvest, tm, scales, ggplot2, forcats)
+```
+
+#Tidying and pre-processing
+##1.1 Mia Malan media agency
+###Read in data
+```{r}
+#read in data
+library(readr)
+malan_twitter <- read_csv("~/Desktop/Assignment2_DA/A2/data_raw/malan_twitter.csv")
+
+head(malan_twitter)
+```
+###Using tidy text to tokenize the tweets into one unit per row
+```{r}
+tidy_malan_twitter <- malan_twitter %>% 
+    #Filtering the last 6 months of tweets
+    filter(created_at >= "2021-01-02 09:30:32") %>%
+    #Date type
+    mutate(a = ymd_hms(created_at), date = as_date(a)) %>%
+    select(text,date,status_id) %>%
+    #pass the token word to the name of the variable that will contain the variable 
+    unnest_tokens("word", text) 
+
+head(tidy_malan_twitter)
+```
+###Count top words in the tweet to find meaningful words
+```{r}
+tidy_malan_twitter %>%
+  count(word) %>%
+    arrange(desc(n))
+```
+###Text pre-processing:removing stopwords
+```{r}
+data("stop_words") #import the stop words data, load the data set into memory
+tidy_malan_twitter<-tidy_malan_twitter %>%
+    filter(!(word=="https"|
+                 word=="rt"|
+                 word=="t.co"|
+                 word=="amp" |
+                word=="miamalan")) %>%
+    anti_join(stop_words)
+```
+###Text pre-processing:removing emojis
+```{r}
+tidy_malan_twitter$word<-gsub("<.*>", "", tidy_malan_twitter$word)
+```
+###Text pre-processing:removing numbers
+```{r}
+tidy_malan_twitter<-tidy_malan_twitter[-grep("\\b\\d+\\b", tidy_malan_twitter$word),] 
+```
+###Text pre-processing:removing whitespace
+```{r}
+tidy_malan_twitter$word<- gsub("\\s+","",tidy_malan_twitter$word)
+```
+###Text pre-processing:removing &
+```{r}
+tidy_malan_twitter$word<-gsub("&amp;", "",tidy_malan_twitter$word)
+```
+###Text pre-processing:removing digits
+```{r}
+tidy_malan_twitter$word <-gsub("[[:digit:]]", "",tidy_malan_twitter$word)  
+```
+###Text pre-processing:removing emoji's and signs
+```{r}
+tidy_malan_twitter$word<-iconv(from = "latin1", to = "ASCII", sub="",tidy_malan_twitter$word) 
+```
+###Text pre-processing:removing @people
+```{r}
+tidy_malan_twitter$word <-gsub("@\\w+", "", tidy_malan_twitter$word) 
+```
+###Text pre-processing:stemming
+```{r}
+library(SnowballC)
+  tidy_malan_twitter<-tidy_malan_twitter %>%
+      mutate_at("word", funs(wordStem((.), language="en")))
+```
+#inspect top words
+```{r}
+tidy_malan_twitter %>%
+  count(word) %>%
+  arrange(desc(n))
+```
+###ggplot for top 25 words in Mia Malans timeline (tweeted and retweeted)
+```{r}
+top_words_tidy_malan_twitter <- tidy_malan_twitter%>%
+  count(word) %>%
+  arrange(desc(n)) %>%
+    slice(1:25) 
+
+ggplot(top_words_tidy_malan_twitter,aes(x=reorder(word, -n), y=n, fill=word))+
+    geom_bar(stat="identity")+
+    theme_light()+
+    ylab("Frequency")+
+    xlab("")+
+    labs(title = "Most Frequent Words in Mia Malan's Tweets")+
+    guides(fill=FALSE)+
+     theme(axis.title.x = element_blank(),
+         axis.title.y = element_blank(),
+          panel.background = element_rect("grey94"),
+          panel.grid.major.y = element_line(linetype = "dashed",colour = "gray"),
+          panel.grid.minor.y = element_blank(),
+          panel.grid.major.x = element_blank(),
+          panel.grid.minor.x = element_blank(),
+          axis.text.x=element_text(size=7.5, angle = 60, hjust = 1),  # X axis text
+          axis.text.y=element_text(size=7.5), # Y axis text
+          plot.title = element_text(size = 10,face="bold", family="sans", hjust = 0.5))
+```
+###saving tidy data frame as a csv for analysis
+```{r}
+write_as_csv(tidy_malan_twitter, "data_out/tidy_malan_twitter.csv", prepend_ids = TRUE, na = "", fileEncoding = "UTF-8")
+
+save_as_csv(tidy_malan_twitter, "data_out/tidy_malan_twitter.csv", prepend_ids = TRUE, na = "", fileEncoding = "UTF-8")
+```
+
+#Tidying and pre-processing
+##1.2 News24 media agency
+###Read in data
+```{r}
+#read in
+library(readr)
+news_twitter <- read_csv("data_raw/news_twitter.csv")
+
+head(news_twitter)
+```
+###Using tidy text to tokenize the tweets into one unit per row
+```{r}
+tidy_news_twitter <- news_twitter %>% 
+    filter(created_at >= "2021-01-02 09:30:32") %>%
+    mutate(a = ymd_hms(created_at), date = as_date(a)) %>%
+    select(text,date, status_id) %>%
+    unnest_tokens("word", text) 
+
+head(tidy_news_twitter)
+```
+###Count top words in the tweet to find meaningful words
+```{r}
+tidy_news_twitter %>%
+  count(word) %>%
+    arrange(desc(n))
+```
+###Text pre-processing:removing stopwords
+```{r}
+data("stop_words") #import the stop words data, load the data set into memory
+tidy_news_twitter<-tidy_news_twitter %>%
+    filter(!(word=="https"|
+                 word=="rt"|
+                 word=="t.co"|
+                 word=="amp" |
+               word=="news24")) %>%
+    anti_join(stop_words)
+```
+###Text pre-processing:removing emojis
+```{r}
+tidy_news_twitter$word<-gsub("<.*>", "", tidy_news_twitter$word)
+```
+###Text pre-processing:removing numbers
+```{r}
+tidy_news_twitter<-tidy_news_twitter[-grep("\\b\\d+\\b", tidy_news_twitter$word),] 
+```
+###Text pre-processing:removing whitespace
+```{r}
+tidy_news_twitter$word<- gsub("\\s+","",tidy_news_twitter$word)
+```
+###Text pre-processing:removing &
+```{r}
+tidy_news_twitter$word<-gsub("&amp;", "",tidy_news_twitter$word)
+```
+###Text pre-processing:removing digits
+```{r}
+tidy_news_twitter$word <-gsub("[[:digit:]]", "",tidy_news_twitter$word)  
+```
+###Text pre-processing:removing emoji's and signs
+```{r}
+tidy_news_twitter$word<-iconv(from = "latin1", to = "ASCII", sub="",tidy_news_twitter$word) 
+```
+###Text pre-processing:removing @people
+```{r}
+tidy_news_twitter$word <-gsub("@\\w+", "", tidy_news_twitter$word) 
+```
+###Text pre-processing:stemming
+```{r}
+library(SnowballC)
+  tidy_news_twitter<-tidy_news_twitter %>%
+      mutate_at("word", funs(wordStem((.), language="en")))
+```
+#inspect top words
+```{r}
+tidy_news_twitter %>%
+  count(word) %>%
+  arrange(desc(n))
+```
+###ggplot for top 25 words in News 24s timeline (tweeted and retweeted)
+```{r}
+top_words_tidy_news_twitter <- tidy_news_twitter%>%
+  count(word) %>%
+  arrange(desc(n)) %>%
+   slice(1:25) 
+  
+ggplot(top_words_tidy_news_twitter, aes(x=reorder(word, -n), y=n, fill=word))+
+    geom_bar(stat="identity")+
+    theme_light()+
+    ylab("Frequency")+
+    xlab("")+
+    labs(title = "Most Frequent Words in News24's Tweets")+
+    guides(fill=FALSE)+
+    theme(axis.title.x = element_blank(),
+         axis.title.y = element_blank(),
+          panel.background = element_rect("grey94"),
+          panel.grid.major.y = element_line(linetype = "dashed",colour = "gray"),
+          panel.grid.minor.y = element_blank(),
+          panel.grid.major.x = element_blank(),
+          panel.grid.minor.x = element_blank(),
+          axis.text.x=element_text(size=7.5, angle = 60, hjust = 1),  # X axis text
+          axis.text.y=element_text(size=7.5), # Y axis text
+          plot.title = element_text(size = 10,face="bold", family="sans", hjust = 0.5))
+```
+###saving tidy data frame as a csv for analysis
+```{r}
+write_as_csv(tidy_news_twitter, "data_out/tidy_news_twitter.csv", prepend_ids = TRUE, na = "", fileEncoding = "UTF-8")
+
+save_as_csv(tidy_news_twitter, "data_out/tidy_news_twitter.csv", prepend_ids = TRUE, na = "", fileEncoding = "UTF-8")
+```
+
+
+#Tidying and pre-processing
+##1.3 SABC media agency
+###Read in data
+```{r}
+#Read in data
+library(readr)
+sabc_twitter <- read_csv("data_raw/sabc_twitter.csv")
+
+head(sabc_twitter)
+```
+###Using tidy text to tokenize the tweets into one unit per row
+```{r}
+tidy_sabc_twitter <- sabc_twitter %>% 
+    filter(created_at >= "2021-01-02 09:30:32") %>%
+    mutate(a = ymd_hms(created_at), date = as_date(a)) %>%
+    select(text,date, status_id) %>%
+    unnest_tokens("word", text) #pass the token word to the name of the variable that will contain the variable 
+
+head(tidy_sabc_twitter)
+```
+###Count top words in the tweet to find meaningful words
+```{r}
+tidy_sabc_twitter %>%
+  count(word) %>%
+    arrange(desc(n))
+```
+###Text pre-processing:removing stopwords
+```{r}
+data("stop_words") #import the stop words data, load the data set into memory
+tidy_sabc_twitter<-tidy_sabc_twitter %>%
+    filter(!(word=="https"|
+                 word=="rt"|
+                 word=="t.co"|
+                 word=="amp" |
+                word==""|
+               word == "sabcnew")) %>%
+    anti_join(stop_words)
+```
+###Text pre-processing:removing emojis
+```{r}
+tidy_sabc_twitter$word<-gsub("<.*>", "", tidy_sabc_twitter$word)
+```
+###Text pre-processing:removing numbers
+```{r}
+tidy_sabc_twitter<-tidy_sabc_twitter[-grep("\\b\\d+\\b", tidy_sabc_twitter$word),] 
+```
+###Text pre-processing:removing whitespace
+```{r}
+tidy_sabc_twitter$word<- gsub("\\s+","",tidy_sabc_twitter$word)
+```
+###Text pre-processing:removing &
+```{r}
+tidy_sabc_twitter$word<-gsub("&amp;", "",tidy_sabc_twitter$word)
+```
+###Text pre-processing:removing digits
+```{r}
+tidy_sabc_twitter$word <-gsub("[[:digit:]]", "",tidy_sabc_twitter$word)  
+```
+###Text pre-processing:removing emoji's and signs
+```{r}
+tidy_sabc_twitter$word<-iconv(from = "latin1", to = "ASCII", sub="",tidy_sabc_twitter$word) 
+```
+###Text pre-processing:removing @people
+```{r}
+tidy_sabc_twitter$word <-gsub("@\\w+", "", tidy_sabc_twitter$word) 
+```
+###Text pre-processing:stemming
+```{r}
+library(SnowballC)
+  tidy_sabc_twitter<-tidy_sabc_twitter %>%
+      mutate_at("word", funs(wordStem((.), language="en")))
+```
+#inspect top words
+```{r}
+tidy_sabc_twitter %>%
+  count(word) %>%
+  arrange(desc(n))
+```
+###ggplot for top 25 words in SABCs timeline (tweeted and retweeted)
+```{r}
+top_words_tidy_sabc_twitter <- tidy_sabc_twitter%>%
+  count(word) %>%
+  arrange(desc(n)) %>%
+  slice(1:25)
+
+ggplot(top_words_tidy_sabc_twitter, aes(x=reorder(word, -n), y=n, fill=word))+
+    geom_bar(stat="identity")+
+    theme_light()+
+    ylab("Frequency")+
+    xlab("")+
+    labs(title = "Most Frequent Words in SABC Tweets")+
+    guides(fill=FALSE)+
+    theme(axis.title.x = element_blank(),
+         axis.title.y = element_blank(),
+          panel.background = element_rect("grey94"),
+          panel.grid.major.y = element_line(linetype = "dashed",colour = "gray"),
+          panel.grid.minor.y = element_blank(),
+          panel.grid.major.x = element_blank(),
+          panel.grid.minor.x = element_blank(),
+          axis.text.x=element_text(size=7.5, angle = 60, hjust = 1),  # X axis text
+          axis.text.y=element_text(size=7.5), # Y axis text
+          plot.title = element_text(size = 10,face="bold", family="sans", hjust = 0.5))
+```
+###saving tidy data frame as a csv for analysis
+```{r}
+write_as_csv(tidy_sabc_twitter, "data_out/tidy_sabc_twitter.csv", prepend_ids = TRUE, na = "", fileEncoding = "UTF-8")
+
+save_as_csv(tidy_sabc_twitter, "data_out/tidy_sabc_twitter.csv", prepend_ids = TRUE, na = "", fileEncoding = "UTF-8")
+```
+
+
+#Tidying and pre-processing
+##1.4 Government/Health media agency
+###Read in data
+```{r}
+#read in
+library(readr)
+government_twitter <- read_csv("data_raw/government_twitter.csv")
+
+head(government_twitter)
+```
+###Using tidy text to tokenize the tweets into one unit per row
+```{r}
+tidy_government_twitter <- government_twitter %>% 
+    filter(created_at >= "2021-01-02 09:30:32") %>%
+    mutate(a = ymd_hms(created_at), date = as_date(a)) %>%
+    select(text,date, status_id) %>%
+    unnest_tokens("word", text) #pass the token word to the name of the variable that will contain the variable 
+
+head(tidy_government_twitter)
+```
+###Count top words in the tweet to find meaningful words
+```{r}
+tidy_government_twitter %>%
+  count(word) %>%
+    arrange(desc(n))
+```
+###Text pre-processing:removing stopwords
+```{r}
+data("stop_words") #import the stop words data, load the data set into memory
+tidy_government_twitter<-tidy_government_twitter %>%
+    filter(!(word=="https"|
+                 word=="rt"|
+                 word=="t.co"|
+                 word=="amp"|
+               word=="healthza")) %>%
+    anti_join(stop_words)
+```
+###Text pre-processing:removing emojis
+```{r}
+tidy_government_twitter$word<-gsub("<.*>", "", tidy_government_twitter$word)
+```
+###Text pre-processing:removing numbers
+```{r}
+tidy_government_twitter<-tidy_government_twitter[-grep("\\b\\d+\\b", tidy_government_twitter$word),] 
+```
+###Text pre-processing:removing whitespace
+```{r}
+tidy_government_twitter$word<- gsub("\\s+","",tidy_government_twitter$word)
+```
+###Text pre-processing:removing &
+```{r}
+tidy_government_twitter$word<-gsub("&amp;", "",tidy_government_twitter$word)
+```
+###Text pre-processing:removing digits
+```{r}
+tidy_government_twitter$word <-gsub("[[:digit:]]", "",tidy_government_twitter$word)  # Need to make an exception for covid19
+```
+###Text pre-processing:removing emoji's and signs
+```{r}
+tidy_government_twitter$word<-iconv(from = "latin1", to = "ASCII", sub="",tidy_government_twitter$word) 
+```
+###Text pre-processing:removing @people
+```{r}
+tidy_government_twitter$word <-gsub("@\\w+", "", tidy_government_twitter$word) 
+```
+###Text pre-processing:stemming
+```{r}
+library(SnowballC)
+  tidy_government_twitter<-tidy_government_twitter %>%
+      mutate_at("word", funs(wordStem((.), language="en")))
+```
+#inspect top words
+```{r}
+tidy_government_twitter %>%
+  count(word) %>%
+  arrange(desc(n))
+```
+###ggplot for top 25 words in Governments timeline (tweeted and retweeted)
+```{r}
+top_words_tidy_government_twitter <- tidy_government_twitter%>%
+  count(word) %>%
+  arrange(desc(n)) %>%
+  slice(1:25) 
+
+ggplot(top_words_tidy_government_twitter,aes(x=reorder(word, -n), y=n, fill=word))+
+    geom_bar(stat="identity")+
+    theme_light()+
+    ylab("Frequency")+
+    xlab("")+
+    labs(title = "Most Frequent Words in Government Tweets")+
+    guides(fill=FALSE)+
+    theme(axis.title.x = element_blank(),
+         axis.title.y = element_blank(),
+          panel.background = element_rect("grey94"),
+          panel.grid.major.y = element_line(linetype = "dashed",colour = "gray"),
+          panel.grid.minor.y = element_blank(),
+          panel.grid.major.x = element_blank(),
+          panel.grid.minor.x = element_blank(),
+          axis.text.x=element_text(size=7.5, angle = 60, hjust = 1),  # X axis text
+          axis.text.y=element_text(size=7.5), # Y axis text
+          plot.title = element_text(size = 10,face="bold", family="sans", hjust = 0.5))
+
+
+
+```
+###saving tidy data frame as a csv for analysis
+```{r}
+write_as_csv(tidy_government_twitter, "data_out/tidy_government_twitter.csv", prepend_ids = TRUE, na = "", fileEncoding = "UTF-8")
+
+save_as_csv(tidy_government_twitter, "data_out/tidy_government_twitter.csv", prepend_ids = TRUE, na = "", fileEncoding = "UTF-8")
+```
+
+
+#Tidying and pre-processing
+##1.5 ALl encompassing dataset
+###Read in data
+```{r}
+ #read in
+library(readr)
+twitter <- read_csv("~/Desktop/Assignment2_DA/A2/data_raw/twitter.csv")
+head(twitter)
+```
+###Using tidy text to tokenize the tweets into one unit per row
+```{r}
+tidy_twitter <- twitter %>%
+    filter(created_at >= "2021-01-02 09:30:32") %>%
+    mutate(a = ymd_hms(created_at), date = as_date(a)) %>%
+    select(text,date, screen_name, status_id) %>%
+    unnest_tokens("word", text) #pass the token word to the name of the variable that will contain the variable 
+
+head(tidy_twitter)
+```
+###Count top words in the tweet to find meaningful words
+```{r}
+tidy_twitter %>%
+  count(word) %>%
+    arrange(desc(n))
+```
+###Text pre-processing:removing stopwords
+```{r}
+data("stop_words") #import the stop words data, load the data set into memory
+
+tidy_twitter<-tidy_twitter %>%
+    filter(!(word=="https"|
+                 word=="rt"|
+                 word=="t.co"|
+                 word=="amp")) %>%
+     anti_join(stop_words)
+```
+###Text pre-processing:removing emojis
+```{r}
+tidy_twitter$word<-gsub("<.*>", "", tidy_twitter$word)
+```
+###Text pre-processing:removing numbers
+```{r}
+tidy_twitter<-tidy_twitter[-grep("\\b\\d+\\b", tidy_twitter$word),] 
+```
+###Text pre-processing:removing whitespace
+```{r}
+tidy_twitter$word<- gsub("\\s+","",tidy_twitter$word)
+```
+###Text pre-processing:removing &
+```{r}
+tidy_twitter$word<-gsub("&amp;", "",tidy_twitter$word)
+```
+###Text pre-processing:removing digits
+```{r}
+tidy_twitter$word <-gsub("[[:digit:]]", "",tidy_twitter$word) 
+```
+###Text pre-processing:removing emoji's and signs
+```{r}
+tidy_twitter$word<-iconv(from = "latin1", to = "ASCII", sub="",tidy_twitter$word) 
+```
+###Text pre-processing:removing @people
+```{r}
+tidy_twitter$word <-gsub("@\\w+", "", tidy_twitter$word) 
+```
+###Text pre-processing:stemming
+```{r}
+library(SnowballC)
+  tidy_twitter<-tidy_twitter %>%
+      mutate_at("word", funs(wordStem((.), language="en")))
+```
+#inspect top words
+```{r}
+tidy_twitter %>%
+  count(word) %>%
+  arrange(desc(n))
+```
+###ggplot for top 25 words for all media agencies (tweeted and retweeted)
+```{r}
+top_words_tidy_twitter <- tidy_twitter%>%
+  count(word) %>%
+  arrange(desc(n)) %>%
+  slice(1:25)
+
+ggplot(top_words_tidy_twitter, aes(x=reorder(word, -n), y=n, fill=word))+
+    geom_bar(stat="identity")+
+    theme_light()+
+    ylab("Frequency")+
+    xlab("")+
+    labs(title = "Most Frequent Words from Media Agencies")+
+    guides(fill=FALSE)+
+      theme(axis.title.x = element_blank(),
+         axis.title.y = element_blank(),
+          panel.background = element_rect("grey94"),
+          panel.grid.major.y = element_line(linetype = "dashed",colour = "gray"),
+          panel.grid.minor.y = element_blank(),
+          panel.grid.major.x = element_blank(),
+          panel.grid.minor.x = element_blank(),
+          axis.text.x=element_text(size=7.5, angle = 60, hjust = 1),  # X axis text
+          axis.text.y=element_text(size=7.5), # Y axis text
+          plot.title = element_text(size = 10,face="bold", family="sans", hjust = 0.5))
+
+```
+###saving tidy data frame as a csv for analysis
+```{r}
+write_as_csv(tidy_twitter, "data_out/tidy_twitter.csv", prepend_ids = TRUE, na = "", fileEncoding = "UTF-8")
+
+save_as_csv(tidy_twitter, "data_out/tidy_twitter.csv", prepend_ids = TRUE, na = "", fileEncoding = "UTF-8")
+```
+
+#Analyzing word and document frequency: tf-idf
+##1.5 ALl the Media Agencies
+###Calculating the amount of time a word is used (n) & the total words
+```{r}
+words_tidy_twitter <- tidy_twitter %>%
+  count(screen_name,word,sort = TRUE)
+
+total_tidy_twitter <- words_tidy_twitter %>% 
+  group_by(screen_name) %>% 
+  summarize(total = sum(n))
+
+words_tidy_twitter<- left_join(words_tidy_twitter, total_tidy_twitter)
+
+head(words_tidy_twitter)
+```
+#Visualsing the distribution of n/total words per screen_name
+```{r}
+library(ggplot2)
+
+ggplot(words_tidy_twitter, aes(n/total, fill = screen_name)) +
+  geom_histogram(show.legend = FALSE) +
+  xlim(NA, 0.0009) +
+  facet_wrap(~screen_name, ncol = 2, scales = "free_y") +
+  labs(title = "Visualisation of distribution of n/total words per screen_name")+
+  theme_light()+
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        panel.background = element_rect("grey94"),
+        panel.grid.major.y = element_line(linetype = "dashed",colour = "gray"),
+        panel.grid.minor.y = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        axis.text.x=element_text(size=7.5),  # X axis text
+        axis.text.y=element_text(size=7.5), # Y axis text
+        plot.title = element_text(size = 10,face="bold", family="sans", hjust = 0.5))
+```
+##Zipf’s law
+```{r}
+freq_rank_twitter <- words_tidy_twitter %>% 
+  group_by(screen_name) %>% 
+  mutate(rank = row_number(), 
+         `term frequency` = n/total) %>%
+  ungroup()
+
+head(freq_rank_twitter)
+```
+###Visualising Zipf's law
+```{r}
+ggplot(freq_rank_twitter,aes(rank, `term frequency`, color = screen_name)) + 
+  geom_line(size = 1.1, alpha = 0.8, show.legend = FALSE) + 
+  scale_x_log10() +
+  scale_y_log10()+
+  labs(title = "Visualisation of Zipf's Law", y= "Term Frequency", x = "Rank")+
+  theme_light()+
+  theme(panel.background = element_rect("grey94"),
+        panel.grid.major.y = element_line(linetype = "dashed",colour = "gray"),
+        panel.grid.minor.y = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.text.y= element_blank(),
+        axis.text.x=element_text(size=7.5),  # X axis text
+        plot.title = element_text(size = 10,face="bold", family="sans", hjust = 0.5),
+           axis.title.x = element_text(size = 10),
+           axis.title.y = element_text(size = 10))
+```
+#tf-idf
+```{r}
+mystopwords<- tibble(word = c("h", "r", "act", "le", "bykbrhqv", "yv", "ba", "wa", "mots", "nr", "cvcsnvmnfs"))
+
+words_tidy_twitter <- anti_join(words_tidy_twitter, mystopwords, by = "word")
+
+tf_idf_words_tidy_twitter <- words_tidy_twitter %>%
+  bind_tf_idf(word, screen_name, n)
+
+##terms with high tf-idf
+tf_idf_words_tidy_twitter %>%
+  select(-total) %>%
+  arrange(desc(tf_idf))
+
+head(tf_idf_words_tidy_twitter)
+```
+##visualization of tf-idf
+```{r}
+tf_idf_words_tidy_twitter %>%
+  group_by(screen_name) %>%
+  slice_max(tf_idf, n = 10) %>%
+  ungroup() %>%
+  
+  #Visualise
+  ggplot(aes(tf_idf, fct_reorder(word, tf_idf), fill = screen_name)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~screen_name, ncol = 2, scales = "free") +
+  labs(x = "tf-idf", y = NULL, title = "Visualisation of tf-idf")+
+  theme_light()+
+  theme(axis.title.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        panel.background = element_rect("grey94"),
+        panel.grid.major.y = element_line(linetype = "dashed",colour = "gray"),
+        panel.grid.minor.y = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        axis.text.x=element_text(size=7.5),  # X axis text
+        axis.text.y=element_text(size=7.5), # Y axis text
+        legend.background = element_rect(fill = "gray"),
+        plot.caption = element_text(hjust = 0, size =7.5),
+        plot.title = element_text(size = 10,face="bold", family="sans", hjust = 0.5))
+```

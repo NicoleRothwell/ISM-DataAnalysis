@@ -1,0 +1,418 @@
+---
+title: 'Assignment 2: Data Collection and Text Mining'
+author: "20742541 & 21970548"
+date: "11/07/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+##Set up of the general environment:
+```{r}
+#pacman installs a package before loading it if it is not already installed
+if (!require("pacman")) install.packages("pacman"); 
+library(pacman)
+pacman::p_load(tidyverse, dplyr, rtweet, ggjoy, reshape2)
+```
+#1.Data Collection
+```{r}
+###Get the most recent tweets from Business for South Africa
+business_tweets <- get_timelines(c("businessforsa"), n = 3200)
+```
+###Write the tweets to a csv file called 'malan_twitter'
+```{r}
+write_as_csv(business_tweets, "data_raw/business_twitter.csv", prepend_ids = TRUE, na = "", fileEncoding = "UTF-8")
+
+save_as_csv(business_tweets, "data_raw/business_twitter.csv", prepend_ids = TRUE, na = "", fileEncoding = "UTF-8")
+```
+#2. Data Tidying
+###Using tidy text to tokenize the tweets into one unit per row
+```{r}
+tidy_business_twitter <- business_tweets %>% #read in
+    filter(created_at >= "2021-01-02 09:30:32") %>%
+    mutate(a = ymd_hms(created_at), date = as_date(a)) %>%
+    select(text,date,status_id) %>%
+    unnest_tokens("word", text) #pass the token word to the name of the variable that will contain the variable 
+
+head(tidy_business_twitter)
+```
+###Count top words in the tweet to find meaningful words
+```{r}
+tidy_business_twitter %>%
+  count(word) %>%
+    arrange(desc(n))
+```
+###Text pre-processing:removing stopwords
+```{r}
+data("stop_words") #import the stop words data, load the data set into memory
+tidy_business_twitter<-tidy_business_twitter%>%
+    filter(!(word=="https"|
+                 word=="rt"|
+                 word=="t.co"|
+                 word=="amp" |
+                word=="miamalan")) %>%
+    anti_join(stop_words)
+```
+###Text pre-processing:removing emojis
+```{r}
+tidy_business_twitter$word<-gsub("<.*>", "", tidy_business_twitter$word)
+```
+###Text pre-processing:removing numbers
+```{r}
+tidy_business_twitter<-tidy_business_twitter[-grep("\\b\\d+\\b", tidy_business_twitter$word),] 
+```
+###Text pre-processing:removing whitespace
+```{r}
+tidy_business_twitter$word<- gsub("\\s+","",tidy_business_twitter$word)
+```
+###Text pre-processing:removing &
+```{r}
+tidy_business_twitter$word<-gsub("&amp;", "",tidy_business_twitter$word)
+```
+###Text pre-processing:removing digits
+```{r}
+tidy_business_twitter$word <-gsub("[[:digit:]]", "",tidy_business_twitter$word)  
+```
+###Text pre-processing:removing emoji's and signs
+```{r}
+tidy_business_twitter$word<-iconv(from = "latin1", to = "ASCII", sub="",tidy_business_twitter$word) 
+```
+###Text pre-processing:removing @people
+```{r}
+tidy_business_twitter$word <-gsub("@\\w+", "", tidy_business_twitter$word) 
+```
+###Text pre-processing:stemming
+```{r}
+library(SnowballC)
+tidy_business_twitter<-tidy_business_twitter%>%
+      mutate_at("word", funs(wordStem((.), language="en")))
+```
+#inspect top words
+```{r}
+tidy_business_twitter%>%
+  count(word) %>%
+  arrange(desc(n))
+```
+###ggplot for top 25 words in Business for SA timeline (tweeted and retweeted)
+```{r}
+top_tidy_business_twitter <- tidy_business_twitter%>%
+  count(word) %>%
+  arrange(desc(n))
+
+library(ggplot2)
+
+top_tidy_business_twitter%>%
+  slice(1:25) %>%
+    ggplot(aes(x=reorder(word, -n), y=n, fill=word))+
+      geom_bar(stat="identity")+
+        theme_light()+
+          ylab("Frequency")+
+          xlab("")+
+          ggtitle("Most Frequent Words in Business for SA's Tweets")+
+          guides(fill=FALSE)+
+  theme(axis.title.x = element_blank(),
+         axis.title.y = element_blank(),
+          panel.background = element_rect("grey94"),
+          panel.grid.major.y = element_line(linetype = "dashed",colour = "gray"),
+          panel.grid.minor.y = element_blank(),
+          panel.grid.major.x = element_blank(),
+          panel.grid.minor.x = element_blank(),
+          axis.text.x=element_text(size=7.5, angle = 60, hjust = 1),  # X axis text
+          axis.text.y=element_text(size=7.5), # Y axis text
+          plot.title = element_text(size = 10,face="bold", family="sans", hjust = 0.5))
+```
+###saving tidy data frame as a csv for analysis
+```{r}
+write_as_csv(tidy_business_twitter, "data_out/tidy_business_twitter.csv", prepend_ids = TRUE, na = "", fileEncoding = "UTF-8")
+
+save_as_csv(tidy_business_twitter, "data_out/tidy_business_twitter.csv", prepend_ids = TRUE, na = "", fileEncoding = "UTF-8")
+```
+#Tweeting Patterns
+##Analysising Tweeting Patterns
+```{r}
+ggplot(tidy_business_twitter, aes(x = date)) +
+  geom_histogram(position = "identity", bins = 20, show.legend = FALSE, fill = "brown", colour = "black", alpha=0.7) +
+  labs(title = "Twitter Patterns", x= NULL, y= "Number of Tweets")+
+  theme_light()+
+  theme(panel.background = element_rect("grey94"),
+        panel.grid.major.y = element_line(linetype = "dashed",colour = "gray"),
+        panel.grid.minor.y = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        axis.text.x=element_text(size=7.5),  # X axis text
+        axis.text.y=element_text(size=7.5), # Y axis text
+        plot.title = element_text(size = 10,face="bold", family="sans", hjust = 0.5),
+        axis.title.y = element_text(size = 10))
+```
+#Sentiment Analysis
+##Exploring "nrc" lexicon
+```{r}
+nrc_business<-tidy_business_twitter %>%
+  inner_join(get_sentiments("nrc")) %>%
+  count(sentiment)
+
+nrc_business$percentage=(nrc_business$n/sum(nrc_business$n))*100
+
+```
+###Visualising NRC Lexicon
+```{r}
+ggplot(nrc_business, aes(sentiment, percentage)) +   
+        geom_bar(aes(fill = sentiment), position = 'dodge', stat = 'identity')+ 
+        coord_flip() +
+  #a title and axis titles are added
+        labs(y= "Percentage", title = "Sentiment Lexicon: 'NRC'")+
+        theme_light()+
+        theme(axis.title.y = element_blank(),
+            panel.background = element_rect("grey94"),
+            panel.grid.major.y = element_line(linetype = "dashed",colour = "gray"),
+            panel.grid.minor.y = element_blank(),
+            panel.grid.major.x = element_blank(),
+            panel.grid.minor.x = element_blank(),
+            axis.text.x=element_text(size=7.5),  # X axis text
+            axis.text.y=element_text(size=7.5), # Y axis text
+            plot.title = element_text(size = 10,face="bold", family="sans", hjust = 0.5),
+            legend.position = 'none',
+            axis.title.x = element_text(size = 10))
+```
+```{r}
+tidy_business_twitter %>%
+  inner_join(get_sentiments("nrc")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  acast(word ~ sentiment, value.var = "n", fill = 0) %>%
+  comparison.cloud(colorPalette = "Reds",
+                   max.words = 100)
+```
+###Changes and Comparison of Sentiment over time
+```{r}
+nrc_overall_twitter <- tidy_business_twitter %>%
+  #access the nrc lexicon
+  inner_join(get_sentiments("nrc")) %>% 
+  group_by(sentiment, date) %>%
+  summarize(frequency = n()) %>%
+  mutate(percentage=round(frequency/sum(frequency)*100)) %>%
+  summarize(total_mean=mean(percentage), std_sd=sd(percentage))
+
+ggplot(nrc_overall_twitter, aes(x = reorder(sentiment, -total_mean), y=total_mean)) +
+  geom_bar(stat="identity", fill="brown", alpha=0.7) + 
+  geom_errorbar(aes(ymin=total_mean-std_sd, ymax=total_mean+std_sd), width=0.2,position=position_dodge(.9)) +
+  labs(x= "Sentiment", y= "(%) Word Count", title = "Sentiment in Business for SA")+
+  theme_light()+
+  coord_flip()+
+  theme(axis.text.x=element_text(angle=45, hjust=1,size=7.5),
+        panel.background = element_rect("grey94"),
+        panel.grid.major.y = element_line(linetype = "dashed",colour = "gray"),
+        panel.grid.minor.y = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        axis.text.y=element_text(size=7.5), # Y axis text
+        plot.title = element_text(size = 10,face="bold", family="sans", hjust = 0.5),
+        axis.title.y = element_text(size = 10))
+```
+##Sentiment over Time
+```{r}
+nrc_timeline <- tidy_business_twitter %>%
+  inner_join(get_sentiments("nrc"), by = "word") %>%
+  group_by(date, sentiment) %>%
+  tally %>%
+  arrange(desc(n))
+
+ggplot(nrc_timeline) +
+  geom_joy(aes(x = date,y = sentiment, fill = sentiment),rel_min_height = 0.01, alpha = 0.6, scale = 3) +
+  theme_joy() +
+  labs(x= "", y= "", title = "Business for SA Sentiment Patterns")+
+  scale_fill_discrete(guide=FALSE)+
+  theme(panel.background = element_rect("grey94"),
+        panel.grid.major.y = element_line(linetype = "dashed",colour = "gray"),
+        panel.grid.minor.y = element_blank(),
+        panel.grid.major.x = element_line(linetype = "dashed",colour = "gray"),
+        panel.grid.minor.x = element_blank(),
+        axis.text.y=element_text(size=7.5), # Y axis text
+        plot.title = element_text(size = 10,face="bold", family="sans", hjust = 0.5),
+        axis.title.y = element_text(size = 10),
+        axis.text.x=element_text(size=7.5))
+```
+###Visualising the Sentiment of the top 10 words per sentimenet
+```{r}
+nrc_words_twitter_sentiments<-tidy_business_twitter %>%
+  inner_join(get_sentiments("nrc"), by = "word") %>%
+  count(word, sentiment, sort = TRUE) %>%
+  group_by(sentiment) %>%
+  top_n(10) %>%
+  ungroup() 
+
+ggplot(nrc_words_twitter_sentiments, aes(word, n, fill = word)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scales = "free_y") +
+  labs(title = "Words associated with each Sentiment") +
+  coord_flip()+
+  theme_light()+
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        panel.background = element_rect("grey94"),
+        panel.grid.major.y = element_line(linetype = "dashed",colour = "gray"),
+        panel.grid.minor.y = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        axis.text.x=element_text(size=5.5),  # X axis text
+        axis.text.y=element_text(size=5.5), # Y axis text
+        plot.title = element_text(size = 10,face="bold", family="sans", hjust = 0.5))
+ 
+```
+
+##Topic Modelling 
+```{r}
+#Read in the data
+business_data <- tidy_business_twitter %>%
+  select(date,status_id,word) 
+tidy_business_twitter
+
+#Create a DTM
+business_dtm <-business_data %>%
+  count(status_id, word, sort=TRUE) %>%
+  cast_dtm(document = status_id, term = word, value = n)
+
+#Find the K value for the data
+result <- FindTopicsNumber(
+  business_dtm,
+  topics = seq(from = 2, to = 15, by = 1),
+  metrics = c("Griffiths2004", "CaoJuan2009", "Arun2010", "Deveaud2014"),
+  method = "Gibbs",
+  control = list(seed = 77),
+  mc.cores = 2L,
+  verbose = TRUE)
+
+FindTopicsNumber_plot(result)
+
+#Creating a LDA for the top terms visualisation 
+business_lda <- LDA(business_dtm, k = 4, control = list(seed = 1234))
+
+business_lda
+
+business_lda_td <- tidy(business_lda) # The matrix needs to be tydied for efficient processing 
+
+business_lda_td
+
+#Top Terms graph for the topics data
+
+business_top_terms <- business_lda_td %>%
+  group_by(topic) %>%
+  slice_max(beta, n = 10) %>% #The top 10 words 
+  ungroup() %>%
+  arrange(topic, -beta)
+business_top_terms
+  
+business_top_terms_vis <- business_top_terms %>%
+  mutate(term = reorder_within(term, beta, topic)) %>%
+  ggplot(aes(beta, term, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free") +
+  scale_y_reordered() +
+  ggtitle("LDA Top Terms B4SA")
+  
+business_top_terms_vis
+
+#Topic sentiment
+business_lda_sentiment <- business_lda_td%>%
+  inner_join(get_sentiments("nrc"), by = c("term" = "word")) %>%
+  group_by(topic) 
+  
+ggplot(business_lda_sentiment, aes(x = sentiment, y = beta, fill = sentiment)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Business for SA Topic Sentiment") +
+  scale_fill_discrete(name = "Sentiment")+
+  facet_wrap(~topic) +
+  theme_light() +
+  theme_light()+
+  theme(axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      panel.background = element_rect("grey94"),
+      panel.grid.major.y = element_line(linetype = "dashed",colour = "gray"),
+      panel.grid.minor.y = element_blank(),
+      panel.grid.major.x = element_blank(),
+      panel.grid.minor.x = element_blank(),
+      plot.title = element_text(size = 10,face="bold", family="sans", hjust = 0.5),
+      axis.text.x = element_blank(),
+      axis.text.y = element_blank(),
+      axis.ticks = element_blank())
+
+#Topic Sentiment by Time
+joined_business_twitter <- left_join(business_lda_td, tidy_business_twitter,by = c("term" = "word")) %>%
+  group_by(topic,date)%>%
+  #access the nrc lexicon
+  inner_join(get_sentiments("nrc"), by = c("term" = "word")) %>%
+  #count the positive and negative sentiment
+  count(sentiment) %>% 
+  # make the data wide
+  spread(sentiment, n, fill = 0) %>% 
+  #create a new column
+  mutate(sentiment = positive - negative,
+         topic = factor(topic)) 
+
+ggplot(joined_business_twitter, aes(x=date, y=sentiment, fill=topic)) + 
+  geom_bar(stat="identity", position="stack") +
+  labs(x= "", y= "Sentiment", title = "Business for SA Topic Sentiment over Time")+
+  scale_fill_discrete(name = "Topics")+
+  theme_light()+
+  theme(panel.background = element_rect("grey94"),
+        panel.grid.major.y = element_line(linetype = "dashed",colour = "gray"),
+        panel.grid.minor.y = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        axis.text.x=element_text(size=7.5),  # X axis text
+        axis.text.y=element_text(size=7.5), # Y axis text
+        plot.title = element_text(size = 10,face="bold", family="sans", hjust = 0.5),
+        axis.title.x = element_text(size = 10),
+        axis.title.y = element_text(size = 10),
+        legend.title = element_text(size = 10))
+
+#Structured Topic Modelling
+
+#Creating a document feature matrix
+business_dfm <- business_data %>%
+  count(status_id, word ,sort = TRUE) %>%
+  cast_dfm(status_id, word ,n)
+
+business_model <- stm(business_dfm, K = 10, init.type = "Spectral")
+summary(business_model)
+
+#Plotting the beta analysis graph
+td_beta_business <- tidy(business_model)
+
+beta_business <- td_beta_business %>%
+  group_by(topic) %>%
+  top_n(10) %>%
+  ungroup %>%
+  mutate(term = reorder(term, beta)) %>%
+  ggplot(aes(term, beta, fill = topic)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~topic, scales = "free") +
+  coord_flip() +
+  ggtitle("Beta Graph for B4SA data source")
+
+td_beta_business
+beta_business
+
+#Plotting the gamma analysis graph
+
+td_gamma_business <- tidy((business_model), matrix = "gamma", document_names = rownames(business_dfm))
+
+gamma_business <- ggplot(td_gamma_business, aes(gamma, fill = as.factor(topic))) +
+  geom_histogram(show.legend = FALSE) + 
+  facet_wrap(~topic, ncol = 3) +
+  ggtitle("GAMMA Graph B4SA data source")
+
+gamma_business
+```
+
+
+
+
+
+
+
+
+
+
+
+

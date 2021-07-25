@@ -1,0 +1,89 @@
+---
+title: 'Assignment 2: Data Collection and Text Mining'
+author: "Kevin Frew (20742541) & Nicole Rothwell (21970548)"
+date: "02/07/2021"
+output: html_document
+---
+##Set up of the general environment:
+```{r}
+#pacman installs a package before loading it if it is not already installed
+if (!require("pacman")) install.packages("pacman"); 
+library(pacman)
+pacman::p_load(tidyverse, dplyr, rtweet)
+```
+###Get the most recent 3,200 tweets from Mia Malan, News24, HealthZA and SABC News
+```{r}
+## get user IDs of accounts 
+tweets <- get_timelines(c("miamalan", "News24", "HealthZA", "SABCNews"), n = 3200)
+
+```
+###Write the tweets to a csv file called 'twitter'
+```{r}
+write_as_csv(tweets, "twitter.csv", prepend_ids = TRUE, na = "", fileEncoding = "UTF-8")
+
+save_as_csv(tweets, "twitter.csv", prepend_ids = TRUE, na = "", fileEncoding = "UTF-8")
+```
+
+###1.1 Get the most recent tweets from Mia Malan
+```{r}
+## get user IDs of accounts 
+miamalan_tweets <- get_timelines(c("miamalan"), n = 3200)
+```
+###Write the tweets to a csv file called 'malan_twitter'
+```{r}
+write_as_csv(miamalan_tweets, "malan_twitter.csv", prepend_ids = TRUE, na = "", fileEncoding = "UTF-8")
+
+save_as_csv(miamalan_tweets, "malan_twitter.csv", prepend_ids = TRUE, na = "", fileEncoding = "UTF-8")
+```
+
+###1.2 Get the most recent tweets from News24
+```{r}
+## get user IDs of accounts 
+news_tweets <- get_timelines(c("News24"), n = 3200)
+```
+###Write the tweets to a csv file called 'news_twitter'
+```{r}
+write_as_csv(news_tweets, "news_twitter.csv", prepend_ids = TRUE, na = "", fileEncoding = "UTF-8")
+
+save_as_csv(news_tweets, "news_twitter.csv", prepend_ids = TRUE, na = "", fileEncoding = "UTF-8")
+```
+
+###1.3 Get the most recent tweets from HealthZA
+```{r}
+## get user IDs of accounts 
+government_tweets <- get_timelines(c("HealthZA"), n = 3200)
+```
+###Write the tweets to a csv file called 'government_twitter'
+```{r}
+write_as_csv(government_tweets, "government_twitter.csv", prepend_ids = TRUE, na = "", fileEncoding = "UTF-8")
+
+save_as_csv(government_tweets, "government_twitter.csv", prepend_ids = TRUE, na = "", fileEncoding = "UTF-8")
+```
+
+###1.4 Get the most recent tweets from SABCNews
+```{r}
+## get user IDs of accounts
+sabc_tweets <- get_timelines(c("SABCNews"), n = 3200)
+```
+###Write the tweets to a csv file called 'sabc_twitter'
+```{r}
+write_as_csv(sabc_tweets, "sabc_twitter.csv", prepend_ids = TRUE, na = "", fileEncoding = "UTF-8")
+
+save_as_csv(sabc_tweets, "sabc_twitter.csv", prepend_ids = TRUE, na = "", fileEncoding = "UTF-8")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

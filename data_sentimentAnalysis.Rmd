@@ -1,0 +1,257 @@
+---
+title: 'Assignment 2: Data Collection and Text Mining'
+author: "20742541 & 21970548"
+date: "05/07/2021"
+output: html_document
+---
+#Analysing Patterns and Sentiment Analysis
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+##Set up of the general environment:
+```{r}
+#pacman installs a package before loading it, if it is not already installed
+if (!require("pacman")) install.packages("pacman"); 
+library(pacman)
+pacman::p_load(tidyverse, dplyr, rtweet, lubridate, tidytext, Unicode, rvest, tm, reshape2, wordcloud, textdata)
+```
+##Read in tidy dataframes
+```{r}
+tidy_government_twitter <- read_csv("data_out/tidy_government_twitter.csv")
+
+tidy_malan_twitter <- read_csv("data_out/tidy_malan_twitter.csv")
+
+tidy_news_twitter <- read_csv("data_out/tidy_news_twitter.csv")
+
+tidy_sabc_twitter <- read_csv("data_out/tidy_sabc_twitter.csv")
+
+tidy_twitter <- read_csv("data_out/tidy_twitter.csv")
+```
+##Analysising Tweeting Patterns
+###Overall tweeting patterns
+```{r}
+#the tidy_twitter data frame is used as it combines the four media agencies data into one data frame
+ggplot(tidy_twitter, aes(x = date, fill = screen_name)) +
+  geom_histogram(position = "identity", bins = 20, show.legend = FALSE) +
+  #tidy_twitter will be sectioned by screen_name
+  facet_wrap(~screen_name, ncol = 2)+
+  labs(title = "Twitter Patterns", x= NULL, y= "Number of Tweets")+
+  theme_light()+
+  theme(panel.background = element_rect("grey94"),
+        panel.grid.major.y = element_line(linetype = "dashed",colour = "gray"),
+        panel.grid.minor.y = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        axis.text.x=element_text(size=7.5),  # X axis text
+        axis.text.y=element_text(size=7.5), # Y axis text
+        plot.title = element_text(size = 10,face="bold", family="sans", hjust = 0.5),
+        axis.title.y = element_text(size = 10))
+```
+##Sentiment Analysis
+###Exploring sentiment with NRC lexicon
+```{r}
+nrc_twitter_sentiments <- tidy_twitter %>%
+#a new object is created to explore the NRC lexicon
+  group_by(screen_name) %>%
+#the lexicon is accessed through the get_sentiments function
+  inner_join(get_sentiments("nrc")) %>%
+  count(sentiment) 
+#a new column is created named 'percentage' that calculates the percentage of the sentiments
+  nrc_twitter_sentiments$percentage=(nrc_twitter_sentiments$n/sum(nrc_twitter_sentiments$n))*100
+```
+###Visualising NRC Lexicon
+```{r}
+ggplot(nrc_twitter_sentiments, aes(sentiment, percentage)) +   
+        geom_bar(aes(fill = sentiment), position = 'dodge', stat = 'identity')+ 
+        coord_flip() +
+  #a title and axis titles are added
+        labs(y= "Percentage", title = "Sentiment Lexicon: 'NRC'")+
+        theme_light()+
+        theme(axis.title.y = element_blank(),
+            panel.background = element_rect("grey94"),
+            panel.grid.major.y = element_line(linetype = "dashed",colour = "gray"),
+            panel.grid.minor.y = element_blank(),
+            panel.grid.major.x = element_blank(),
+            panel.grid.minor.x = element_blank(),
+            axis.text.x=element_text(size=7.5),  # X axis text
+            axis.text.y=element_text(size=7.5), # Y axis text
+            plot.title = element_text(size = 10,face="bold", family="sans", hjust = 0.5),
+            legend.position = 'none',
+            axis.title.x = element_text(size = 10))
+```
+###Analysing sentiment changes throughout all the media agencies using the “bing” Lexicon
+```{r}
+bing_twitter_sentiments <- tidy_twitter %>%
+#the bing lexicon is accessed, grouping by screen_name
+  group_by(screen_name) %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) 
+
+```
+###Visualising the bing lexicon 
+```{r}
+bing_twitter_sentiments %>%
+  #grouped by positive and negative sentiment
+  group_by(sentiment) %>%
+  #the top words are plotted
+  top_n(15) %>%
+  ungroup() %>%
+  mutate(word = reorder(word, n)) %>%
+  #Visualise the top 15 words per sentiment
+  ggplot(aes(word, n, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scales = "free_y") +
+  labs(title = "General Sentiment from the Media Agencies") +
+  coord_flip()+
+  theme_light()+
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        panel.background = element_rect("grey94"),
+        panel.grid.major.y = element_line(linetype = "dashed",colour = "gray"),
+        panel.grid.minor.y = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        axis.text.x=element_text(size=7.5),  # X axis text
+        axis.text.y=element_text(size=7.5), # Y axis text
+        plot.title = element_text(size = 10,face="bold", family="sans", hjust = 0.5))
+```
+###Visualising the Sentiment of the top 15 words per media agency in a facet-wrap
+```{r}
+visual_bing_twitter_sentiments<-bing_twitter_sentiments %>%
+  group_by(screen_name) %>%
+  top_n(15) %>%
+  ungroup() %>%
+  mutate(word = reorder(word, n))
+
+
+ggplot(visual_bing_twitter_sentiments, aes(word, n, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~screen_name, scales = "free_y") +
+  labs(title = "Sentiment from various Media Agencies") +
+  coord_flip()+
+  theme_light()+
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        panel.background = element_rect("grey94"),
+        panel.grid.major.y = element_line(linetype = "dashed",colour = "gray"),
+        panel.grid.minor.y = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        axis.text.x=element_text(size=7.5),  # X axis text
+        axis.text.y=element_text(size=7.5), # Y axis text
+        plot.title = element_text(size = 10,face="bold", family="sans", hjust = 0.5))
+ 
+```
+### Sentiment for all the Media Agencies: World Cloud Visualisation
+```{r}
+bing_twitter_sentiments %>%
+  acast(word ~ sentiment, value.var = "n", fill = 0) %>%
+  comparison.cloud(max.words=100, random.order=FALSE, rot.per=0.40, colors=brewer.pal(3, "Dark2"))
+```
+### Sentiment for Mia Mala: World Cloud Visualisation
+```{r}
+bing_malan_sentiments <- tidy_malan_twitter %>%
+# join sentiment
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) 
+
+bing_malan_sentiments %>%
+  acast(word ~ sentiment, value.var = "n", fill = 0) %>%
+  comparison.cloud(max.words=100, random.order=FALSE, rot.per=0.40, colors=brewer.pal(3, "Dark2"))
+```
+### Sentiment for News24: World Cloud Visualisation
+```{r}
+bing_news_sentiments <- tidy_news_twitter %>%
+# join sentiment
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) 
+
+bing_news_sentiments%>%
+  acast(word ~ sentiment, value.var = "n", fill = 0) %>%
+  comparison.cloud(max.words=80, random.order=FALSE, rot.per=0.40, colors=brewer.pal(3, "Dark2"))
+```
+### Sentiment for HealthZA: World Cloud Visualisation
+```{r}
+bing_government_sentiments <- tidy_government_twitter %>%
+# join sentiment
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) 
+
+bing_government_sentiments%>%
+  acast(word ~ sentiment, value.var = "n", fill = 0) %>%
+  comparison.cloud(max.words=100, random.order=FALSE, rot.per=0.40, colors=brewer.pal(3, "Dark2"))
+```
+### Sentiment for SABC News: World Cloud Visualisation
+```{r}
+bing_sabc_sentiments <- tidy_sabc_twitter %>%
+# join sentiment
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) 
+
+bing_sabc_sentiments%>%
+  acast(word ~ sentiment, value.var = "n", fill = 0) %>%
+  comparison.cloud(max.words=100, random.order=FALSE, rot.per=0.40, colors=brewer.pal(3, "Dark2"))
+```
+###Plotting Sentiment scores across a 5 word index over last 3200 tweets
+```{r}
+bing_index_twitter <-bing_twitter_sentiments  %>%
+  group_by(screen_name) %>% 
+  mutate(word_count = 1:n(),
+  #break up each tweet by 5 words
+  index = word_count %/% 5 + 1) %>% 
+  count(screen_name, index = index , sentiment) %>%
+  ungroup() %>%
+  # make the data wide
+  spread(sentiment, n, fill = 0) %>%
+  #creating a new column to hold the sentiment value
+   mutate(sentiment = positive - negative, 
+          screen_name = factor(screen_name)) 
+       
+ggplot(bing_index_twitter, aes(index, sentiment, fill = screen_name)) +
+  geom_bar(alpha = 0.5, stat = "identity", show.legend = FALSE) +
+  facet_wrap(~ screen_name, ncol = 2, scales = "free_x")+
+  labs(title= "Changes in Sentiment", x= "Tweets over Time", y= "Sentiment")+
+  theme_light()+
+  theme(panel.background = element_rect("grey94"),
+    panel.grid.major.y = element_line(linetype = "dashed",colour = "gray"),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    axis.text.x=element_text(size=7.5),  # X axis text
+    axis.text.y=element_text(size=7.5), # Y axis text
+    plot.title = element_text(size = 10,face="bold", family="sans", hjust = 0.5), 
+    axis.title.x = element_text(size = 10),
+    axis.title.y = element_text(size = 10))
+```
+###Changes and Comparison of Sentiment over time
+```{r}
+bing_overall_twitter <- tidy_twitter %>%
+  group_by(screen_name, date) %>%
+  #access the bing lexicon
+  inner_join(get_sentiments("bing")) %>% 
+  #count the positive and negative sentiment
+  count(sentiment) %>% 
+  # make the data wide
+  spread(sentiment, n, fill = 0) %>% 
+  #create a new column
+  mutate(sentiment = positive - negative) 
+
+#Visualise Sentiment over time
+ggplot(bing_overall_twitter, aes(x = date, y = sentiment)) + 
+  geom_point(aes(color = screen_name), size = 1)+ 
+  #method = "auto" was used to determine the best model
+  geom_smooth(method = 'loess', formula= 'y ~ x') +
+  labs(x= "Date", y= "Sentiment", title = "Comparing Changes in Sentiment over Time", color="Media Agencies")+
+  theme_light()+
+  theme(panel.background = element_rect("grey94"),
+        panel.grid.major.y = element_line(linetype = "dashed",colour = "gray"),
+        panel.grid.minor.y = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        axis.text.x=element_text(size=7.5),  # X axis text
+        axis.text.y=element_text(size=7.5), # Y axis text
+        plot.title = element_text(size = 10,face="bold", family="sans", hjust = 0.5),
+        axis.title.x = element_text(size = 10),
+        axis.title.y = element_text(size = 10))
+
+```
